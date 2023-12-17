@@ -19,11 +19,14 @@ func (log *ChunkedLog) Reader(pos int64) (*ChunkedLogReader, error) {
 
 func (r *ChunkedLogReader) Read(into []byte) (n int, err error) {
 	file := r.log.fds[r.fno]
-	n, err = file.Read(into)
-	if err == io.EOF && r.fno+1 < len(r.log.fds) {
+	chunk_off := r.pos - r.log.offsets[r.fno]
+	n, err = file.ReadAt(into, chunk_off)
+	r.pos += int64(n)
+	if r.pos == r.log.offsets[r.fno+1] && r.fno+1 < len(r.log.fds) {
 		r.fno++
-		r.log.fds[r.fno].Seek(0, 0) // FIXME
-		return r.Read(into)
+		if err == io.EOF {
+			return r.Read(into)
+		}
 	}
 	return
 }
@@ -49,10 +52,6 @@ func (r *ChunkedLogReader) Seek(offset int64, whence int) (int64, error) {
 		return -1, ErrOutOfRange
 	}
 	r.fno = k
-	start := r.log.offsets[k]
-	p, err := r.log.fds[k].Seek(offset-start, 0)
-	if err == nil {
-		p += start
-	}
-	return p, err
+	r.pos = offset
+	return offset, nil
 }

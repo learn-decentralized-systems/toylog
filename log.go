@@ -72,7 +72,7 @@ func (log *ChunkedLog) Open(dir string) (err error) {
 		} else if next > start {
 			return ErrOverlap
 		}
-		file, err := os.Open(fn)
+		file, err := os.Open(dir + string(os.PathSeparator) + fn)
 		if err != nil {
 			return err
 		}
@@ -107,6 +107,7 @@ func (log *ChunkedLog) expireChunk() {
 }
 
 func (log *ChunkedLog) RotateChunks() error {
+	_ = log.fds[len(log.fds)-1].Sync()
 	pos := log.TotalSize()
 	path := log.fn4pos(pos)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)

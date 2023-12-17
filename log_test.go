@@ -18,7 +18,7 @@ func PumpInts(log *ChunkedLog, fro, till uint32, t *testing.T) {
 }
 
 func TestChunkedLog_Write(t *testing.T) {
-	const M = 1 << 20
+	const M = 1 << 15
 	log := ChunkedLog{
 		MaxChunkSize: M,
 		MaxChunks:    4,
@@ -72,5 +72,35 @@ func TestLogReader_Seek(t *testing.T) {
 		assert.Equal(t, 4, n)
 		rec := binary.LittleEndian.Uint32(buf[:])
 		assert.Equal(t, i, rec)
+
 	}
+
+	err = log.Sync()
+	assert.Nil(t, err)
+
+	log.Close()
+
+	log2 := ChunkedLog{
+		MaxChunkSize: int64(M),
+		MaxChunks:    4,
+	}
+	err = log2.Open("log")
+
+	{
+		seam, err := log2.Reader(int64(5*M - 4))
+		assert.Nil(t, err)
+		var buf [4]byte
+		n, err := seam.Read(buf[:])
+		assert.Nil(t, err)
+		assert.Equal(t, 4, n)
+		rec := binary.LittleEndian.Uint32(buf[:])
+		assert.Equal(t, (5*M-4)/4, rec)
+
+		n, err = seam.Read(buf[:])
+		assert.Nil(t, err)
+		assert.Equal(t, 4, n)
+		rec = binary.LittleEndian.Uint32(buf[:])
+		assert.Equal(t, (5*M)/4, rec)
+	}
+
 }

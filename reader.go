@@ -2,7 +2,7 @@ package toylog
 
 import (
 	"errors"
-	"io"
+	"golang.org/x/sys/unix"
 )
 
 type ChunkedLogReader struct {
@@ -20,14 +20,14 @@ func (log *ChunkedLog) Reader(pos int64) (*ChunkedLogReader, error) {
 func (r *ChunkedLogReader) Read(into []byte) (n int, err error) {
 	file := r.log.fds[r.fno]
 	chunk_off := r.pos - r.log.offsets[r.fno]
-	n, err = file.ReadAt(into, chunk_off)
-	r.pos += int64(n)
-	if r.pos == r.log.offsets[r.fno+1] && r.fno+1 < len(r.log.fds) {
-		r.fno++
-		if err == io.EOF {
+	n, err = unix.Pread(file, into, chunk_off)
+	if n == 0 { // EOF
+		if r.fno+1 < len(r.log.fds) {
+			r.fno++
 			return r.Read(into)
 		}
 	}
+	r.pos += int64(n)
 	return
 }
 
@@ -38,18 +38,16 @@ func (r *ChunkedLogReader) Seek(offset int64, whence int) (int64, error) {
 	if offset < r.log.offsets[0] {
 		return -1, ErrChunkMissing
 	}
+	if offset > r.log.wrlen {
+		return -1, ErrOutOfRange
+	}
 	l := len(r.log.offsets)
 	k := 0
 	for k+1 < l {
-		f := r.log.offsets[k]
-		t := r.log.offsets[k+1]
-		if offset >= f && offset < t {
+		if offset < r.log.offsets[k+1] {
 			break
 		}
 		k++
-	}
-	if k+1 == l {
-		return -1, ErrOutOfRange
 	}
 	r.fno = k
 	r.pos = offset

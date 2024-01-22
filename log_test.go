@@ -2,105 +2,105 @@ package toylog
 
 import (
 	"encoding/binary"
+	"github.com/learn-decentralized-systems/toyqueue"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"sync"
 	"testing"
 )
 
-func PumpInts(log *ChunkedLog, fro, till uint32, t *testing.T) {
-	for i := fro; i < till; i++ {
-		var b [4]byte
-		binary.LittleEndian.PutUint32(b[:], i)
-		n, err := log.Write(b[:])
-		assert.Nil(t, err)
-		assert.Equal(t, 4, n)
+func TestRecords_Prefix(t *testing.T) {
+	recs := toyqueue.Records{{1}, {1, 2}, {1, 2, 3}, {1, 2, 3, 4}}
+	assert.Equal(t, int64(10), recs.TotalLen())
+	suff := recs.ExactSuffix(5)
+	assert.Equal(t, int64(5), suff.TotalLen())
+	assert.Equal(t, recs[2][2:], suff[0])
+	pref, rem := recs.WholeRecordPrefix(5)
+	assert.Equal(t, int64(3), pref.TotalLen())
+	assert.Equal(t, int64(2), rem)
+}
+
+func TestChunkedLog_Open(t *testing.T) {
+	const N = 1 << 17
+	log := ChunkedLog{
+		MaxChunkSize: 1 << 15,
+		MaxChunks:    1 << 5,
+		Synced:       false,
 	}
+	os.RemoveAll("chunked.log")
+	err := log.Open("chunked.log")
+	assert.Nil(t, err)
+	for i := uint64(0); i < N; i++ {
+		var b [8]byte
+		binary.LittleEndian.PutUint64(b[:], i)
+		n, err := log.Write(b[:])
+		assert.Equal(t, 8, n)
+		assert.Nil(t, err)
+	}
+
+	reader, err := log.Reader(0)
+	assert.Nil(t, err)
+	for i := uint64(0); i < N; i++ {
+		var b [8]byte
+		n, err := reader.Read(b[:])
+		assert.Nil(t, err)
+		assert.Equal(t, 8, n)
+		j := binary.LittleEndian.Uint64(b[:])
+		assert.Equal(t, i, j)
+	}
+
+	err = log.Close()
+	assert.Nil(t, err)
+	os.RemoveAll("chunked.log")
 }
 
 func TestChunkedLog_Write(t *testing.T) {
-	const M = 1 << 15
+	const N = 1 << 8 // 8K
+	const K = 1 << 2 // 16
 	log := ChunkedLog{
-		MaxChunkSize: M,
-		MaxChunks:    4,
+		MaxChunkSize: 1 << 10,  // 4K
+		MaxChunks:    (1 << 3), // 32
+		Synced:       true,
 	}
-	_ = os.RemoveAll("log")
-	err := log.Open("log")
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	PumpInts(&log, 0, M, t)
-	assert.Equal(t, 4, log.ChunkCount())
-	assert.Equal(t, int64(4*M), log.TotalSize())
-	assert.Equal(t, int64(4*M), log.CurrentSize())
-	assert.Equal(t, int64(0), log.ExpiredSize())
-
-	PumpInts(&log, 0, M, t)
-	assert.Equal(t, 4, log.ChunkCount())
-	assert.Equal(t, int64(8*M), log.TotalSize())
-	assert.Equal(t, int64(4*M), log.CurrentSize())
-	assert.Equal(t, int64(4*M), log.ExpiredSize())
-
-	_ = os.RemoveAll("log")
-}
-
-func TestLogReader_Seek(t *testing.T) {
-	// TODO prepare 4M
-	const M = uint32(1 << 10)
-	log := ChunkedLog{
-		MaxChunkSize: int64(M),
-		MaxChunks:    4,
-	}
-	_ = os.RemoveAll("log")
-	err := log.Open("log")
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	PumpInts(&log, 0, 2*M, t)
-	assert.Equal(t, 4, log.ChunkCount())
-	assert.Equal(t, int64(8*M), log.TotalSize())
-	assert.Equal(t, int64(4*M), log.CurrentSize())
-	assert.Equal(t, int64(4*M), log.ExpiredSize())
-
-	reader, err := log.Reader(int64(M * 4))
+	os.RemoveAll("concurrent.log")
+	err := log.Open("concurrent.log")
 	assert.Nil(t, err)
-	for i := M; i < 2*M; i++ {
-		var buf [4]byte
-		n, err := reader.Read(buf[:])
-		assert.Nil(t, err)
-		assert.Equal(t, 4, n)
-		rec := binary.LittleEndian.Uint32(buf[:])
-		assert.Equal(t, i, rec)
-
+	lock := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	wg.Add(K)
+	for k := 0; k < K; k++ {
+		go func(k int) {
+			i := uint64(k) << 32
+			for n := uint64(0); n < N; n++ {
+				var b [8]byte
+				binary.LittleEndian.PutUint64(b[:], i|n)
+				lock.Lock()
+				n, err := log.Write(b[:])
+				lock.Unlock()
+				assert.Equal(t, 8, n)
+				assert.Nil(t, err)
+			}
+			wg.Done()
+		}(k)
 	}
+	wg.Wait()
 
-	err = log.Sync()
+	reader, err := log.Reader(0)
 	assert.Nil(t, err)
-
-	log.Close()
-
-	log2 := ChunkedLog{
-		MaxChunkSize: int64(M),
-		MaxChunks:    4,
-	}
-	err = log2.Open("log")
-
-	{
-		seam, err := log2.Reader(int64(5*M - 4))
+	check := [K]int{}
+	for i := uint64(0); i < N*K; i++ {
+		var b [8]byte
+		r, err := reader.Read(b[:])
 		assert.Nil(t, err)
-		var buf [4]byte
-		n, err := seam.Read(buf[:])
-		assert.Nil(t, err)
-		assert.Equal(t, 4, n)
-		rec := binary.LittleEndian.Uint32(buf[:])
-		assert.Equal(t, (5*M-4)/4, rec)
-
-		n, err = seam.Read(buf[:])
-		assert.Nil(t, err)
-		assert.Equal(t, 4, n)
-		rec = binary.LittleEndian.Uint32(buf[:])
-		assert.Equal(t, (5*M)/4, rec)
+		assert.Equal(t, 8, r)
+		j := binary.LittleEndian.Uint64(b[:])
+		k := int(j >> 32)
+		n := int(j & 0xffffffff)
+		assert.Equal(t, check[k], n)
+		check[k] = n + 1
 	}
 
+	err = log.Close()
+	assert.Nil(t, err)
+	_ = os.RemoveAll("concurrent.log")
 }

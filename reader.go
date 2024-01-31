@@ -13,9 +13,9 @@ type ChunkedLogReader struct {
 	fd  int
 }
 
-func (log *ChunkedLog) Reader(pos int64) (*ChunkedLogReader, error) {
+func (log *ChunkedLog) Reader(pos int64, whence int) (*ChunkedLogReader, error) {
 	reader := ChunkedLogReader{log: log}
-	_, err := reader.Seek(pos, io.SeekStart)
+	_, err := reader.Seek(pos, whence)
 	return &reader, err
 }
 
@@ -52,4 +52,16 @@ func (r *ChunkedLogReader) Seek(offset int64, whence int) (int64, error) {
 	r.off = off
 	r.pos = off + int64(fpos)
 	return r.pos, nil
+}
+
+func (r *ChunkedLogReader) Close() (err error) {
+	if r.fd == 0 {
+		return
+	}
+	err = unix.Close(r.fd)
+	r.fd = 0
+	r.log = nil
+	r.off = 0
+	r.pos = 0
+	return
 }

@@ -313,7 +313,3 @@ func (log *ChunkedLog) ExpiredSize() int64 {
 func (log *ChunkedLog) CurrentSize() int64 {
 	return log.TotalSize() - log.ExpiredSize()
 }
-
-func (log *ChunkedLog) ChunkOffset(chunkno int) int64 {
-	return log.offsets[chunkno]
-}

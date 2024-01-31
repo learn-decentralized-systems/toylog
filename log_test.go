@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"github.com/learn-decentralized-systems/toyqueue"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"os"
 	"sync"
 	"testing"
@@ -38,7 +39,7 @@ func TestChunkedLog_Open(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	reader, err := log.Reader(0)
+	reader, err := log.Reader(0, io.SeekStart)
 	assert.Nil(t, err)
 	for i := uint64(0); i < N; i++ {
 		var b [8]byte
@@ -85,7 +86,7 @@ func TestChunkedLog_Write(t *testing.T) {
 	}
 	wg.Wait()
 
-	reader, err := log.Reader(0)
+	reader, err := log.Reader(0, io.SeekStart)
 	assert.Nil(t, err)
 	check := [K]int{}
 	for i := uint64(0); i < N*K; i++ {

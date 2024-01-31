@@ -82,7 +82,14 @@ func (log *ChunkedLog) Open(dir string) (err error) {
 		}
 		log.offsets = append(log.offsets, 0)
 		log.fds = append(log.fds, file)
-		return nil
+		if log.Header != nil {
+			var header toyqueue.Records
+			header, err = log.Header.Feed()
+			if err == nil {
+				err = log.Drain(header)
+			}
+		}
+		return err
 	}
 	next := int64(0)
 	sort.Strings(filenames)

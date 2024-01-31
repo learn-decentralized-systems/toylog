@@ -3,29 +3,35 @@ package toylog
 import (
 	"errors"
 	"golang.org/x/sys/unix"
+	"io"
 )
 
 type ChunkedLogReader struct {
 	log *ChunkedLog
 	pos int64
-	fno int
+	off int64
+	fd  int
 }
 
 func (log *ChunkedLog) Reader(pos int64) (*ChunkedLogReader, error) {
 	reader := ChunkedLogReader{log: log}
-	_, err := reader.Seek(pos, 0)
+	_, err := reader.Seek(pos, io.SeekStart)
 	return &reader, err
 }
 
 func (r *ChunkedLogReader) Read(into []byte) (n int, err error) {
-	file := r.log.fds[r.fno]
-	chunk_off := r.pos - r.log.offsets[r.fno]
-	n, err = unix.Pread(file, into, chunk_off)
+	chunk_off := r.pos - r.off
+	n, err = unix.Pread(r.fd, into, chunk_off)
+	if err != nil {
+		return
+	}
 	if n == 0 { // EOF
-		if r.fno+1 < len(r.log.fds) {
-			r.fno++
-			return r.Read(into)
+		old_off := r.off                     // no 0 length chunks
+		_, err = r.Seek(r.pos, io.SeekStart) // afresh
+		if err != nil || old_off == r.off {
+			return
 		}
+		return r.Read(into)
 	}
 	r.pos += int64(n)
 	return
@@ -35,21 +41,15 @@ var ErrChunkMissing = errors.New("the requested chunk is missing")
 var ErrOutOfRange = errors.New("the requested offset is out of range")
 
 func (r *ChunkedLogReader) Seek(offset int64, whence int) (int64, error) {
-	if offset < r.log.offsets[0] {
-		return -1, ErrChunkMissing
+	fd, off, fpos, err := r.log.Locate(offset, whence)
+	if err != nil {
+		return r.pos, err
 	}
-	if offset > r.log.wrlen {
-		return -1, ErrOutOfRange
+	if r.fd != 0 {
+		_ = unix.Close(r.fd)
 	}
-	l := len(r.log.offsets)
-	k := 0
-	for k+1 < l {
-		if offset < r.log.offsets[k+1] {
-			break
-		}
-		k++
-	}
-	r.fno = k
-	r.pos = offset
-	return offset, nil
+	r.fd = fd
+	r.off = off
+	r.pos = off + int64(fpos)
+	return r.pos, nil
 }

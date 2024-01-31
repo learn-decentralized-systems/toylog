@@ -2,6 +2,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/learn-decentralized-systems/toyqueue v0.0.0-20240122110842-36f1dc8aa982 h1:yUo26xxM/yWpwFS8MTB3jq+O1P/2J0Ncv5T3zUcZsl8=
 github.com/learn-decentralized-systems/toyqueue v0.0.0-20240122110842-36f1dc8aa982/go.mod h1:T5PrFDCcxA1O7hb2MAlHYYFA89ry8hvXUuwg+drS1UQ=
+github.com/learn-decentralized-systems/toyqueue v0.1.1 h1:oMtNIv1KliUyVUGYyHMee5QQqOLWrK6VInXtls5uknU=
+github.com/learn-decentralized-systems/toyqueue v0.1.1/go.mod h1:T5PrFDCcxA1O7hb2MAlHYYFA89ry8hvXUuwg+drS1UQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=

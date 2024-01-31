@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"github.com/learn-decentralized-systems/toyqueue"
 	"golang.org/x/sys/unix"
+	"io"
 	"io/fs"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 )
 
+// Concurrent access guarantees: one writer, many readers.
 type ChunkedLog struct {
 	// Chunk size never exceeds this number (can not make a bigger write)
 	MaxChunkSize int64
@@ -29,6 +32,8 @@ type ChunkedLog struct {
 	// counting all past chunks, including those already dropped.
 	wrlen, sylen int64
 	reclen       int
+
+	lock sync.Mutex
 }
 
 var ErrNotOpen = errors.New("the log is not open")
@@ -139,11 +144,13 @@ func (log *ChunkedLog) rotateChunks() error {
 	if err != nil {
 		return err
 	}
+	log.lock.Lock()
 	log.fds = append(log.fds, file)
 	log.offsets = append(log.offsets, log.wrlen)
 	for log.ChunkCount() > log.MaxChunks && len(log.fds) > 1 {
 		log.expireChunk()
 	}
+	log.lock.Unlock()
 	return nil
 }
 
@@ -227,6 +234,70 @@ func (log *ChunkedLog) Close() error {
 	return nil
 }
 
+const (
+	ChunkSeekStart   = 3 // seek relative to the origin of the file
+	ChunkSeekCurrent = 4 // seek relative to the current offset
+	ChunkSeekEnd     = 5 // seek relative to the end
+)
+
+var ErrSeekModeUnsupported = errors.New("seek mode not supported")
+
+// The returned fd has to be closed!
+func (log *ChunkedLog) Locate(pos int64, whence int) (fd int, off, fpos int64, err error) {
+	log.lock.Lock()
+	switch whence {
+	case io.SeekEnd:
+		seek := log.wrlen - pos
+		c := len(log.offsets) - 1
+		for c >= 0 && log.offsets[c] > seek {
+			c--
+		}
+		if c < 0 {
+			err = ErrOutOfRange
+		} else {
+			fd = log.fds[c]
+			off = log.offsets[c]
+			fpos = seek - off
+		}
+	case io.SeekStart:
+		if pos > log.wrlen || pos < 0 {
+			err = ErrOutOfRange
+			break
+		}
+		seek := pos
+		c := 0
+		for c < len(log.offsets)-1 && log.offsets[c+1] <= seek {
+			c++
+		}
+		fd = log.fds[c]
+		off = log.offsets[c]
+		fpos = seek - off
+	case ChunkSeekStart:
+		if pos < 0 || int(pos) >= len(log.fds) {
+			err = ErrOutOfRange
+			break
+		}
+		fd = log.fds[pos]
+		off = log.offsets[pos]
+		fpos = 0
+	case ChunkSeekEnd:
+		if pos < 0 || int(pos) >= len(log.fds) {
+			err = ErrOutOfRange
+			break
+		}
+		p := len(log.fds) - 1 - int(pos)
+		fd = log.fds[p]
+		off = log.offsets[p]
+		fpos = 0
+	default:
+		return 0, 0, 0, ErrSeekModeUnsupported
+	}
+	log.lock.Unlock()
+	fd, err = unix.Dup(fd)
+	return
+
+}
+
 func (log *ChunkedLog) ChunkCount() int {
 	return len(log.fds)
 }
@@ -241,4 +312,8 @@ func (log *ChunkedLog) ExpiredSize() int64 {
 
 func (log *ChunkedLog) CurrentSize() int64 {
 	return log.TotalSize() - log.ExpiredSize()
+}
+
+func (log *ChunkedLog) ChunkOffset(chunkno int) int64 {
+	return log.offsets[chunkno]
 }

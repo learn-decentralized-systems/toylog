@@ -3,7 +3,7 @@ module github.com/learn-decentralized-systems/toylog
 go 1.21.4
 
 require (
-	github.com/learn-decentralized-systems/toyqueue v0.0.0-20240122110842-36f1dc8aa982
+	github.com/learn-decentralized-systems/toyqueue v0.1.1
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/sys v0.16.0
 )

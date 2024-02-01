@@ -29,6 +29,7 @@ func (r *ChunkedLogReader) Read(into []byte) (n int, err error) {
 		old_off := r.off                     // no 0 length chunks
 		_, err = r.Seek(r.pos, io.SeekStart) // afresh
 		if err != nil || old_off == r.off {
+			err = io.EOF
 			return
 		}
 		return r.Read(into)
